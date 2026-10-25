@@ -1,0 +1,13 @@
+.venv/
+node_modules/
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+frontend/dist/
+backend/data/
+sandbox/database/*.db
+sandbox/mailbox/*.jsonl
+sandbox/logs/*
+*.tsbuildinfo
+legacy_demo/data/
