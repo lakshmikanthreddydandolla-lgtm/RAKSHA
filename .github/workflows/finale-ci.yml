@@ -8,6 +8,8 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,7 +23,7 @@ jobs:
       - name: Backend compile
         run: python -m compileall backend
       - name: Finale smoke tests
-        run: pytest backend/tests/test_finale_smoke.py -q
+        run: python -m pytest backend/tests/test_finale_smoke.py -q
       - name: Install frontend
         run: npm ci --prefix frontend
       - name: Frontend production build
