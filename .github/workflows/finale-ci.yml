@@ -26,3 +26,13 @@ jobs:
         run: npm ci --prefix frontend
       - name: Frontend production build
         run: npm --prefix frontend run build
+      - name: Create finale ZIP
+        run: |
+          rm -rf .git .venv node_modules frontend/node_modules backend/data sandbox/database/*.db sandbox/mailbox/*.jsonl sandbox/logs/* || true
+          zip -r RAKSHA_FINALE.zip . -x "RAKSHA_FINALE.zip"
+      - name: Upload finale ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: RAKSHA_FINALE
+          path: RAKSHA_FINALE.zip
+          retention-days: 7
