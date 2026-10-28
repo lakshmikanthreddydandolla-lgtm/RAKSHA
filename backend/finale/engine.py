@@ -23,6 +23,14 @@ def _apply_security_floors(decision: dict[str, Any]) -> dict[str, Any]:
         decision["verdict"] = "BLOCK"
         decision["risk_score"] = max(90, int(decision.get("risk_score", 0)))
         return decision
+    # A matching human scope is allowed to suppress repeated-access noise only
+    # for the exact approved action. It never suppresses destination or policy risk.
+    if scoped and components.get("destination_risk", 0) < 50 and components.get("policy_risk", 0) < 70:
+        components["sequence_risk"] = min(25, int(components.get("sequence_risk", 0)))
+        decision["risk_score"] = min(30, int(decision.get("risk_score", 0)))
+        decision["verdict"] = "ALLOW"
+        decision["predicted_consequence"] = "Action matches an active session-bound human scope and may proceed in the local sandbox."
+        return decision
     if "RETRY_AFTER_INTERVENTION" in signals:
         decision["risk_score"] = max(75, int(decision.get("risk_score", 0)))
         decision["verdict"] = "BLOCK"
