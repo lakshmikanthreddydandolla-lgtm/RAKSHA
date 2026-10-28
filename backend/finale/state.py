@@ -25,6 +25,7 @@ def now_iso() -> str:
 @dataclass
 class AgentRuntime:
     session_id: str
+    display_name: str = "User"
     mode: str = AgentMode.DEMO.value
     model: str | None = None
     connected: bool = True
@@ -52,15 +53,49 @@ _security: dict[str, SecurityRuntime] = {}
 _reviews: dict[str, dict[str, Any]] = {}
 
 
-def connect_agent(session_id: str, mode: str, model: str | None = None) -> AgentRuntime:
+def _clean_name(name: str | None, fallback: str = "User") -> str:
+    value = (name or "").strip()
+    return value[:48] or fallback
+
+
+def create_user(name: str) -> AgentRuntime:
+    clean = _clean_name(name)
+    with _lock:
+        existing = {runtime.display_name.casefold() for runtime in _agents.values()}
+        if clean.casefold() in existing:
+            raise ValueError("A user with that name already exists")
+        session_id = f"user-{uuid.uuid4().hex[:10]}"
+        runtime = AgentRuntime(
+            session_id=session_id,
+            display_name=clean,
+            connected=False,
+        )
+        _agents[session_id] = runtime
+        _security[session_id] = SecurityRuntime(session_id=session_id)
+        return runtime
+
+
+def connect_agent(
+    session_id: str,
+    mode: str,
+    model: str | None = None,
+    display_name: str | None = None,
+) -> AgentRuntime:
     with _lock:
         existing = _agents.get(session_id)
         if existing:
             existing.mode = mode
             existing.model = model
             existing.connected = True
+            if display_name:
+                existing.display_name = _clean_name(display_name, existing.display_name)
             return existing
-        runtime = AgentRuntime(session_id=session_id, mode=mode, model=model)
+        runtime = AgentRuntime(
+            session_id=session_id,
+            display_name=_clean_name(display_name, session_id),
+            mode=mode,
+            model=model,
+        )
         _agents[session_id] = runtime
         _security.setdefault(session_id, SecurityRuntime(session_id=session_id))
         return runtime
@@ -70,7 +105,7 @@ def get_agent(session_id: str) -> AgentRuntime:
     with _lock:
         runtime = _agents.get(session_id)
         if runtime is None:
-            runtime = connect_agent(session_id, AgentMode.DEMO.value)
+            runtime = connect_agent(session_id, AgentMode.DEMO.value, display_name=session_id)
         return runtime
 
 
@@ -87,7 +122,6 @@ def append_message(session_id: str, role: str, content: str) -> None:
     with _lock:
         runtime = get_agent(session_id)
         runtime.messages.append({"role": role, "content": content})
-        # Enough continuity for the demo without unbounded memory growth.
         runtime.messages[:] = runtime.messages[-24:]
 
 
@@ -119,6 +153,7 @@ def agent_context(session_id: str) -> dict[str, Any]:
         a = get_agent(session_id)
         return {
             "session_id": a.session_id,
+            "display_name": a.display_name,
             "mode": a.mode,
             "model": a.model,
             "messages": list(a.messages),
@@ -264,11 +299,29 @@ def update_review(review_id: str, **changes: Any) -> dict[str, Any] | None:
 
 
 def reset_session(session_id: str) -> None:
+    """Clear runtime activity while preserving the named user and provider choice."""
     with _lock:
+        agent = _agents.get(session_id)
+        if agent:
+            agent.messages.clear()
+            agent.last_resource = ""
+            agent.last_secret_resource = ""
+            agent.last_destination = ""
+            agent.last_intent = "NORMAL_CHAT"
+            agent.last_tool_result = ""
+        _security[session_id] = SecurityRuntime(session_id=session_id)
+        for review_id in [rid for rid, r in _reviews.items() if r["session_id"] == session_id]:
+            _reviews.pop(review_id, None)
+
+
+def delete_user(session_id: str) -> bool:
+    with _lock:
+        existed = session_id in _agents or session_id in _security
         _agents.pop(session_id, None)
         _security.pop(session_id, None)
         for review_id in [rid for rid, r in _reviews.items() if r["session_id"] == session_id]:
             _reviews.pop(review_id, None)
+        return existed
 
 
 def disconnect_all() -> list[str]:
@@ -287,6 +340,7 @@ def session_snapshot(session_id: str) -> dict[str, Any]:
         latest = security.history[-1]["decision"] if security.history else None
         return {
             "session_id": session_id,
+            "display_name": agent.display_name if agent else session_id,
             "connected": bool(agent and agent.connected),
             "provider": agent.mode if agent else "demo",
             "model": agent.model if agent else None,
