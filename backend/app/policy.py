@@ -15,6 +15,8 @@ DEFAULT_POLICY: dict[str, Any] = {
         "private_key", "credential", "pii", "payroll",
     ],
     "trusted_destinations": [],
+    "trusted_users": [],
+    "trusted_tools": [],
     "destructive_operations": [
         "delete", "remove", "destroy", "wipe", "format", "drop_table", "drop",
     ],
@@ -82,3 +84,11 @@ def is_trusted_destination(destination: str) -> bool:
         if d == t or (t.startswith("@") and d.endswith(t)):
             return True
     return False
+
+
+def is_trusted_user(display_name: str) -> bool:
+    return display_name.lower().strip() in get_policy()["trusted_users"]
+
+
+def is_trusted_tool(tool: str) -> bool:
+    return tool.lower().strip() in get_policy()["trusted_tools"]
