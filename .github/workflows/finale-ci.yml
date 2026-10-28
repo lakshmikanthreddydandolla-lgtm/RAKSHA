@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:
@@ -32,6 +32,8 @@ jobs:
       - name: Frontend production build
         run: npm --prefix frontend run build
       - name: Browser judge journey
+        id: browser
+        continue-on-error: true
         run: |
           python -m uvicorn backend.main:app --host 127.0.0.1 --port 8001 > /tmp/raksha-api.log 2>&1 &
           API_PID=$!
@@ -47,7 +49,23 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8001/api/health >/dev/null
           curl -fsS http://127.0.0.1:5174 >/dev/null
-          npm --prefix frontend run test:e2e
+          set -o pipefail
+          npm --prefix frontend run test:e2e 2>&1 | tee e2e.log
+      - name: Publish browser diagnostic
+        if: steps.browser.outcome == 'failure'
+        run: |
+          mkdir -p .ci
+          cp e2e.log .ci/e2e.log
+          cp /tmp/raksha-api.log .ci/raksha-api.log || true
+          cp /tmp/raksha-web.log .ci/raksha-web.log || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ci
+          git commit -m "ci: capture browser journey diagnostic" || true
+          git push origin HEAD:finale-ux-rebuild
+      - name: Fail on browser error
+        if: steps.browser.outcome == 'failure'
+        run: exit 1
       - name: Create finale ZIP
         run: |
           rm -rf .git .venv node_modules frontend/node_modules backend/data sandbox/database/*.db sandbox/mailbox/*.jsonl sandbox/logs/* || true
