@@ -31,8 +31,6 @@ jobs:
         run: npm ci --prefix frontend
       - name: Frontend production build
         run: npm --prefix frontend run build
-      - name: Install Chromium for browser verification
-        run: cd frontend && npx playwright install chromium
       - name: Browser judge journey
         run: |
           python -m uvicorn backend.main:app --host 127.0.0.1 --port 8001 > /tmp/raksha-api.log 2>&1 &
