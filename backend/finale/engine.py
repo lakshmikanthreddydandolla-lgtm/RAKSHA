@@ -7,11 +7,38 @@ from backend.app import policy
 from backend.app.audit import chain
 from backend.app.sandbox.executor import execute_tool
 from backend.finale.risk import assess
-from backend.finale.state import add_grant, contain, create_review, get_security, record_security_event, resolve_review, update_review
+from backend.finale.state import (
+    add_grant,
+    contain,
+    create_review,
+    get_agent,
+    get_security,
+    record_security_event,
+    resolve_review,
+    update_review,
+)
 
 
 def _summary(action: dict[str, Any]) -> dict[str, Any]:
     return {key: action.get(key) for key in ("tool", "operation", "resource", "destination")}
+
+
+def _attach_trusted_scope(session_id: str, action: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+    """Mark an action trusted only when both the named user and tool are trusted.
+
+    Trust is intentionally narrow. The later security floors still win for hard
+    blocks, hostile destinations and critical sequences.
+    """
+    display_name = get_agent(session_id).display_name
+    tool = str(action.get("tool", ""))
+    if not (policy.is_trusted_user(display_name) and policy.is_trusted_tool(tool)):
+        return decision
+    signals = decision.setdefault("signals", [])
+    if "TRUSTED_SCOPE" not in signals:
+        signals.append("TRUSTED_SCOPE")
+    reasons = decision.setdefault("reasons", [])
+    reasons.append(f"Trusted scope matched user '{display_name}' and tool '{tool}'.")
+    return decision
 
 
 def _apply_security_floors(decision: dict[str, Any]) -> dict[str, Any]:
@@ -19,10 +46,24 @@ def _apply_security_floors(decision: dict[str, Any]) -> dict[str, Any]:
     components = decision.get("components", {})
     signals = decision.get("signals", [])
     scoped = "SCOPED_HUMAN_GRANT" in signals
+    trusted = "TRUSTED_SCOPE" in signals
+
     if decision.get("hard_block"):
         decision["verdict"] = "BLOCK"
         decision["risk_score"] = max(90, int(decision.get("risk_score", 0)))
         return decision
+
+    if "RETRY_AFTER_INTERVENTION" in signals:
+        decision["risk_score"] = max(75, int(decision.get("risk_score", 0)))
+        decision["verdict"] = "BLOCK"
+        decision["predicted_consequence"] = "Repeated risky execution is stopped and the affected session is contained."
+        return decision
+
+    if components.get("sequence_risk", 0) >= 70:
+        decision["risk_score"] = max(70, int(decision.get("risk_score", 0)))
+        decision["verdict"] = "BLOCK"
+        return decision
+
     # A matching human scope is allowed to suppress repeated-access noise only
     # for the exact approved action. It never suppresses destination or policy risk.
     if scoped and components.get("destination_risk", 0) < 50 and components.get("policy_risk", 0) < 70:
@@ -31,19 +72,25 @@ def _apply_security_floors(decision: dict[str, Any]) -> dict[str, Any]:
         decision["verdict"] = "ALLOW"
         decision["predicted_consequence"] = "Action matches an active session-bound human scope and may proceed in the local sandbox."
         return decision
-    if "RETRY_AFTER_INTERVENTION" in signals:
-        decision["risk_score"] = max(75, int(decision.get("risk_score", 0)))
-        decision["verdict"] = "BLOCK"
-        decision["predicted_consequence"] = "Repeated risky execution is stopped and the affected session is contained."
+
+    # Trusted user + trusted tool is a policy exception for local/safe destinations.
+    # It may relax a high resource score, but never a hard block, hostile destination,
+    # critical sequence, or severe policy violation.
+    if (
+        trusted
+        and components.get("destination_risk", 0) < 50
+        and components.get("policy_risk", 0) < 70
+        and components.get("sequence_risk", 0) < 70
+    ):
+        decision["risk_score"] = min(30, int(decision.get("risk_score", 0)))
+        decision["verdict"] = "ALLOW"
+        decision["predicted_consequence"] = "Action is allowed within the configured trusted user and tool scope."
         return decision
-    if components.get("sequence_risk", 0) >= 70:
-        decision["risk_score"] = max(70, int(decision.get("risk_score", 0)))
-        decision["verdict"] = "BLOCK"
-        return decision
+
     review_floor = (
         components.get("destination_risk", 0) >= 50
         or components.get("permission_risk", 0) >= 50
-        or (components.get("resource_risk", 0) >= 50 and not scoped)
+        or (components.get("resource_risk", 0) >= 50 and not scoped and not trusted)
     )
     if review_floor:
         decision["risk_score"] = max(45, int(decision.get("risk_score", 0)))
@@ -54,7 +101,9 @@ def _apply_security_floors(decision: dict[str, Any]) -> dict[str, Any]:
 
 def process_action(action: dict[str, Any], execute: bool = True) -> dict[str, Any]:
     session_id = str(action.get("session_id", "demo-session"))
-    decision = _apply_security_floors(assess(session_id, action))
+    raw_decision = assess(session_id, action)
+    trusted_decision = _attach_trusted_scope(session_id, action, raw_decision)
+    decision = _apply_security_floors(trusted_decision)
     record_security_event(session_id, action, decision)
     summary = _summary(action)
     chain.append_event(
