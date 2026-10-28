@@ -10,14 +10,16 @@ from pydantic import BaseModel
 from backend.app import policy
 from backend.app.audit import anchor, chain
 from backend.app.sandbox.tools import ensure_sandbox
-from backend.finale.agent import plan_for_mode
+from backend.finale.agent import OLLAMA_DEFAULT_MODEL, OllamaError, ollama_health, plan_for_mode
 from backend.finale.engine import permissions_for_agent, process_action, resolve_human_review
-from backend.finale.models import ActionRequest, AgentConnectRequest, AgentMessageRequest, ReviewDecisionRequest
+from backend.finale.models import ActionRequest, AgentConnectRequest, AgentMessageRequest, ReviewDecisionRequest, UserCreateRequest
 from backend.finale.scenarios import get_scenario, list_scenarios
 from backend.finale.state import (
     agent_context,
     append_message,
     connect_agent,
+    create_user,
+    delete_user,
     disconnect_all,
     get_agent,
     get_security,
@@ -31,11 +33,14 @@ from backend.finale.state import (
 app = FastAPI(
     title="RAKSHA Finale API",
     description="Runtime Agent Kernel for Secure Human-Governed Autonomy",
-    version="2.0.0-finale",
+    version="3.0.0-finale",
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:5174", "http://127.0.0.1:5174",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,26 +57,60 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "project": "RAKSHA",
-        "version": "2.0.0-finale",
+        "version": "3.0.0-finale",
         "security_engine": "sequence-aware-runtime-enforcement",
         "offline_ready": True,
         "tagline": "Before an AI Agent Acts, RAKSHA Decides Whether It Should.",
     }
 
 
+@app.post("/api/users")
+def user_create(request: UserCreateRequest) -> dict[str, Any]:
+    try:
+        runtime = create_user(request.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    chain.append_event("USER_CREATED", runtime.session_id, display_name=runtime.display_name)
+    return session_snapshot(runtime.session_id)
+
+
+@app.delete("/api/users/{session_id}")
+def user_delete(session_id: str) -> dict[str, Any]:
+    snapshot = session_snapshot(session_id) if any(row["session_id"] == session_id for row in list_live_sessions()) else None
+    deleted = delete_user(session_id)
+    if deleted:
+        chain.append_event("USER_DELETED", session_id, display_name=(snapshot or {}).get("display_name", session_id))
+    return {"session_id": session_id, "deleted": deleted}
+
+
 @app.post("/api/agent/connect")
 def agent_connect(request: AgentConnectRequest) -> dict[str, Any]:
     ensure_sandbox()
     mode = request.mode.value
-    runtime = connect_agent(request.session_id, mode, request.model)
-    chain.append_event("AI_CONNECTED", request.session_id, provider=mode, model=request.model, judge_mode=mode == "demo")
+    model = request.model
+    if mode == "ollama":
+        model = model or OLLAMA_DEFAULT_MODEL
+        try:
+            model = ollama_health(model)
+        except OllamaError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "OLLAMA_UNAVAILABLE",
+                    "message": str(exc),
+                    "model": model,
+                    "fallback": "demo",
+                },
+            ) from exc
+    runtime = connect_agent(request.session_id, mode, model, request.display_name)
+    chain.append_event("AI_CONNECTED", request.session_id, provider=mode, model=model, judge_mode=mode == "demo")
     return {
         "connected": True,
         "provider": "RAKSHA Demo Agent" if mode == "demo" else "Local Ollama",
         "provider_id": mode,
         "mode": "JUDGE_MODE" if mode == "demo" else "LOCAL_MODEL",
         "model": runtime.model,
-        "message": "Offline Judge Mode is ready." if mode == "demo" else "Local Ollama mode selected. RAKSHA remains the execution authority.",
+        "message": "Offline Judge Mode is ready." if mode == "demo" else f"Local Ollama {runtime.model} verified and ready.",
         "session": session_snapshot(request.session_id),
     }
 
@@ -135,7 +174,7 @@ def agent_message(request: AgentMessageRequest) -> dict[str, Any]:
         elif proposal.get("resource") == ".env":
             final_message = "The sensitive read executed only after RAKSHA's security decision. Secret contents are intentionally not echoed into chat."
         elif output:
-            final_message = f"Action completed inside the synthetic sandbox under RAKSHA protection."
+            final_message = "Action completed inside the synthetic sandbox under RAKSHA protection."
 
     append_message(request.session_id, "assistant", final_message)
     security = get_security(request.session_id)
@@ -172,11 +211,21 @@ def session(session_id: str) -> dict[str, Any]:
     return snapshot
 
 
-@app.delete("/api/session/{session_id}")
-def session_reset(session_id: str) -> dict[str, Any]:
+@app.post("/api/session/{session_id}/reset")
+def session_reset_preserving_user(session_id: str) -> dict[str, Any]:
+    existing = next((row for row in list_live_sessions() if row["session_id"] == session_id), None)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="User not found")
     reset_session(session_id)
-    chain.append_event("SESSION_RESET", session_id)
-    return {"session_id": session_id, "status": "reset", "contained": False}
+    chain.append_event("SESSION_RESET", session_id, display_name=existing["display_name"])
+    return session_snapshot(session_id)
+
+
+@app.delete("/api/session/{session_id}")
+def session_delete_legacy(session_id: str) -> dict[str, Any]:
+    """Legacy cleanup route retained for tests and older clients; final UI uses /api/users."""
+    deleted = delete_user(session_id)
+    return {"session_id": session_id, "status": "deleted", "deleted": deleted}
 
 
 @app.post("/api/session/evaluate")
@@ -229,7 +278,7 @@ def run_attack(scenario_id: str) -> dict[str, Any]:
     if scenario is None:
         raise HTTPException(status_code=404, detail="Attack scenario not found")
     sid = f"redteam-{scenario_id}-{uuid4().hex[:6]}"
-    connect_agent(sid, "demo")
+    connect_agent(sid, "demo", display_name=f"Red Team: {scenario['name']}")
     events = []
     for raw_action in scenario["actions"]:
         action = {
@@ -308,6 +357,8 @@ class PolicyUpdate(BaseModel):
     default_agent_permissions: list[str] | None = None
     sensitive_markers: list[str] | None = None
     trusted_destinations: list[str] | None = None
+    trusted_users: list[str] | None = None
+    trusted_tools: list[str] | None = None
     destructive_operations: list[str] | None = None
     high_risk_permissions: list[str] | None = None
 
