@@ -58,6 +58,14 @@ jobs:
         if: steps.frontend_build.outcome == 'failure'
         continue-on-error: true
         run: '! grep -q "src/api.ts" frontend-build.log'
+      - name: Compiler check index.css
+        if: steps.frontend_build.outcome == 'failure'
+        continue-on-error: true
+        run: '! grep -q "src/index.css" frontend-build.log'
+      - name: Compiler check App.css
+        if: steps.frontend_build.outcome == 'failure'
+        continue-on-error: true
+        run: '! grep -q "src/App.css" frontend-build.log'
       - name: Compiler check tsconfig.app
         if: steps.frontend_build.outcome == 'failure'
         continue-on-error: true
@@ -74,6 +82,10 @@ jobs:
         if: steps.frontend_build.outcome == 'failure'
         continue-on-error: true
         run: '! grep -qi "Cannot find module\|Could not resolve\|Cannot find type definition" frontend-build.log'
+      - name: Compiler check CSS parser
+        if: steps.frontend_build.outcome == 'failure'
+        continue-on-error: true
+        run: '! grep -qi "css\|Unknown word\|Unexpected token\|Parse error" frontend-build.log'
       - name: Upload frontend diagnostics
         if: steps.frontend_build.outcome == 'failure'
         uses: actions/upload-artifact@v4
