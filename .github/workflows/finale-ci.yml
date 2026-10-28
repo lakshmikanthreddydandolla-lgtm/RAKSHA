@@ -58,6 +58,22 @@ jobs:
         if: steps.frontend_build.outcome == 'failure'
         continue-on-error: true
         run: '! grep -q "src/api.ts" frontend-build.log'
+      - name: Compiler check tsconfig.app
+        if: steps.frontend_build.outcome == 'failure'
+        continue-on-error: true
+        run: '! grep -q "tsconfig.app" frontend-build.log'
+      - name: Compiler check tsconfig.node
+        if: steps.frontend_build.outcome == 'failure'
+        continue-on-error: true
+        run: '! grep -q "tsconfig.node" frontend-build.log'
+      - name: Compiler check vite config
+        if: steps.frontend_build.outcome == 'failure'
+        continue-on-error: true
+        run: '! grep -q "vite.config" frontend-build.log'
+      - name: Compiler check missing module
+        if: steps.frontend_build.outcome == 'failure'
+        continue-on-error: true
+        run: '! grep -qi "Cannot find module\|Could not resolve\|Cannot find type definition" frontend-build.log'
       - name: Upload frontend diagnostics
         if: steps.frontend_build.outcome == 'failure'
         uses: actions/upload-artifact@v4
