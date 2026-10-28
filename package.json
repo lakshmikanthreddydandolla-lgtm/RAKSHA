@@ -1,10 +1,10 @@
 {
   "name": "raksha",
-  "version": "0.1.0",
+  "version": "0.3.0-finale",
   "private": true,
   "scripts": {
     "dev": "concurrently -k -n API,WEB \"npm run dev:api\" \"npm run dev:web\"",
-    "dev:api": ".venv\\Scripts\\python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000",
+    "dev:api": ".venv\\Scripts\\python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8011",
     "dev:web": "npm --prefix frontend run dev -- --host 127.0.0.1"
   },
   "devDependencies": {
