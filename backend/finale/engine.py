@@ -53,24 +53,25 @@ def _apply_security_floors(decision: dict[str, Any]) -> dict[str, Any]:
         decision["risk_score"] = max(90, int(decision.get("risk_score", 0)))
         return decision
 
-    if "RETRY_AFTER_INTERVENTION" in signals:
-        decision["risk_score"] = max(75, int(decision.get("risk_score", 0)))
-        decision["verdict"] = "BLOCK"
-        decision["predicted_consequence"] = "Repeated risky execution is stopped and the affected session is contained."
-        return decision
-
     if components.get("sequence_risk", 0) >= 70:
         decision["risk_score"] = max(70, int(decision.get("risk_score", 0)))
         decision["verdict"] = "BLOCK"
         return decision
 
-    # A matching human scope is allowed to suppress repeated-access noise only
-    # for the exact approved action. It never suppresses destination or policy risk.
+    # An exact human-scoped approval may suppress repeated-access noise for the
+    # approved local action. It never overrides hard blocks, critical sequence
+    # risk, hostile destinations or severe policy violations.
     if scoped and components.get("destination_risk", 0) < 50 and components.get("policy_risk", 0) < 70:
         components["sequence_risk"] = min(25, int(components.get("sequence_risk", 0)))
         decision["risk_score"] = min(30, int(decision.get("risk_score", 0)))
         decision["verdict"] = "ALLOW"
         decision["predicted_consequence"] = "Action matches an active session-bound human scope and may proceed in the local sandbox."
+        return decision
+
+    if "RETRY_AFTER_INTERVENTION" in signals:
+        decision["risk_score"] = max(75, int(decision.get("risk_score", 0)))
+        decision["verdict"] = "BLOCK"
+        decision["predicted_consequence"] = "Repeated risky execution is stopped and the affected session is contained."
         return decision
 
     # Trusted user + trusted tool is a policy exception for local/safe destinations.
