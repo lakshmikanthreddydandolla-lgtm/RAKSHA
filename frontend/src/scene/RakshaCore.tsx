@@ -159,12 +159,12 @@ function OrbitalPlaques({ theme, motion, visible, manualRotation, dragging, onSe
     if (!orbit.current) return
     if (!dragging && visible) auto.current += delta * (motion === 'full' ? 0.18 : 0.12)
     orbit.current.rotation.y = auto.current + manualRotation
-    const target = visible ? 1 : 0.001
-    orbit.current.scale.lerp(new THREE.Vector3(target, target, target), 0.12)
   })
 
+  if (!visible) return null
+
   return (
-    <group ref={orbit} visible={visible}>
+    <group ref={orbit}>
       {workflows.map((workflow, index) => {
         const angle = index / workflows.length * Math.PI * 2
         const x = Math.cos(angle) * 3.45
