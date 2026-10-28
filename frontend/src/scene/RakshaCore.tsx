@@ -35,14 +35,7 @@ function makeLabelTexture(text: string, theme: ThemeMode) {
   return texture
 }
 
-function Brain({
-  label,
-  theme,
-  motion,
-  security,
-  intro,
-  onClick,
-}: {
+function Brain({ label, theme, motion, security, intro, onClick }: {
   label: string
   theme: ThemeMode
   motion: MotionMode
@@ -76,35 +69,18 @@ function Brain({
     inner.current.scale.setScalar(1 + Math.sin(state.clock.elapsedTime * 1.7) * 0.025 * pulse)
   })
 
-  const lobeGeometry = motion === 'full' ? [2, 2] : [1, 1] as const
-
   return (
     <group ref={root} onClick={(event) => { event.stopPropagation(); onClick?.() }}>
       <mesh ref={inner}>
         <icosahedronGeometry args={[0.78, motion === 'full' ? 4 : 2]} />
-        <meshStandardMaterial
-          color={core}
-          emissive={core}
-          emissiveIntensity={security === 'offline' ? 0.02 : 0.24}
-          roughness={0.52}
-          metalness={0.18}
-        />
+        <meshStandardMaterial color={core} emissive={core} emissiveIntensity={security === 'offline' ? 0.02 : 0.24} roughness={0.52} metalness={0.18} />
       </mesh>
-
       {[-0.47, 0.47].map((x, index) => (
         <mesh key={index} position={[x, 0, 0.03]} scale={[0.82, 1, 0.82]}>
-          <icosahedronGeometry args={[0.79, ...lobeGeometry]} />
-          <meshPhysicalMaterial
-            color={metal}
-            wireframe
-            transparent
-            opacity={security === 'offline' ? 0.25 : 0.64}
-            roughness={0.28}
-            metalness={0.9}
-          />
+          <icosahedronGeometry args={[0.79, motion === 'full' ? 3 : 1]} />
+          <meshPhysicalMaterial color={metal} wireframe transparent opacity={security === 'offline' ? 0.25 : 0.64} roughness={0.28} metalness={0.9} />
         </mesh>
       ))}
-
       <mesh position={[0, 0, 0.83]}>
         <planeGeometry args={[1.35, 0.48]} />
         <meshBasicMaterial map={texture} transparent depthWrite={false} />
@@ -131,15 +107,7 @@ function Shield({ theme, motion, security }: { theme: ThemeMode; motion: MotionM
     return values
   }, [count])
 
-  const accent = security === 'block'
-    ? '#c53b45'
-    : security === 'review'
-      ? '#c89338'
-      : security === 'verified'
-        ? '#8eaa8d'
-        : theme === 'archive'
-          ? '#d8d5cd'
-          : '#b99a70'
+  const accent = security === 'block' ? '#c53b45' : security === 'review' ? '#c89338' : security === 'verified' ? '#8eaa8d' : theme === 'archive' ? '#d8d5cd' : '#b99a70'
 
   useFrame((state, delta) => {
     if (ringA.current) ringA.current.rotation.z += delta * (security === 'block' ? 0.75 : 0.12)
@@ -164,15 +132,7 @@ function Shield({ theme, motion, security }: { theme: ThemeMode; motion: MotionM
       </mesh>
       <mesh>
         <sphereGeometry args={[1.72, motion === 'full' ? 64 : 28, motion === 'full' ? 64 : 28]} />
-        <meshPhysicalMaterial
-          color={accent}
-          transparent
-          opacity={security === 'block' ? 0.12 : 0.045}
-          roughness={0.08}
-          metalness={0.05}
-          depthWrite={false}
-          side={THREE.DoubleSide}
-        />
+        <meshPhysicalMaterial color={accent} transparent opacity={security === 'block' ? 0.12 : 0.045} roughness={0.08} metalness={0.05} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
       <points ref={particles}>
         <bufferGeometry>
@@ -184,14 +144,7 @@ function Shield({ theme, motion, security }: { theme: ThemeMode; motion: MotionM
   )
 }
 
-function OrbitalPlaques({
-  theme,
-  motion,
-  visible,
-  manualRotation,
-  dragging,
-  onSelect,
-}: {
+function OrbitalPlaques({ theme, motion, visible, manualRotation, dragging, onSelect }: {
   theme: ThemeMode
   motion: MotionMode
   visible: boolean
@@ -206,7 +159,8 @@ function OrbitalPlaques({
     if (!orbit.current) return
     if (!dragging && visible) auto.current += delta * (motion === 'full' ? 0.18 : 0.12)
     orbit.current.rotation.y = auto.current + manualRotation
-    orbit.current.scale.lerp(new THREE.Vector3(visible ? 1 : 0.001, visible ? 1 : 0.001, visible ? 1 : 0.001), 0.12)
+    const target = visible ? 1 : 0.001
+    orbit.current.scale.lerp(new THREE.Vector3(target, target, target), 0.12)
   })
 
   return (
@@ -220,20 +174,10 @@ function OrbitalPlaques({
           <group key={workflow.id} position={[x, y, z]}>
             <mesh onClick={(event) => { event.stopPropagation(); onSelect?.(workflow.id) }}>
               <boxGeometry args={[1.68, 0.52, 0.08]} />
-              <meshStandardMaterial
-                color={theme === 'archive' ? '#202020' : '#d9c6a5'}
-                metalness={0.88}
-                roughness={0.28}
-              />
+              <meshStandardMaterial color={theme === 'archive' ? '#202020' : '#d9c6a5'} metalness={0.88} roughness={0.28} />
             </mesh>
             <Html center distanceFactor={8} zIndexRange={[20, 10]}>
-              <button
-                type="button"
-                className="orbit-plaque-button"
-                onClick={() => onSelect?.(workflow.id)}
-              >
-                {workflow.label}
-              </button>
+              <button type="button" className="orbit-plaque-button" onClick={() => onSelect?.(workflow.id)}>{workflow.label}</button>
             </Html>
           </group>
         )
@@ -242,19 +186,7 @@ function OrbitalPlaques({
   )
 }
 
-export function RakshaCore({
-  theme,
-  motion,
-  label = 'RAKSHA',
-  security = 'normal',
-  intro = false,
-  showPlaques = false,
-  manualRotation = 0,
-  dragging = false,
-  onBrainClick,
-  onWorkflow,
-  compact = false,
-}: {
+export function RakshaCore({ theme, motion, label = 'RAKSHA', security = 'normal', intro = false, showPlaques = false, manualRotation = 0, dragging = false, onBrainClick, onWorkflow, compact = false }: {
   theme: ThemeMode
   motion: MotionMode
   label?: string
@@ -268,12 +200,7 @@ export function RakshaCore({
   compact?: boolean
 }) {
   return (
-    <Canvas
-      className="raksha-canvas"
-      dpr={motion === 'full' ? [1, 1.35] : [0.75, 1]}
-      camera={{ position: [0, 0, compact ? 6.3 : 7.4], fov: compact ? 39 : 43 }}
-      gl={{ antialias: motion === 'full', alpha: true, powerPreference: 'high-performance' }}
-    >
+    <Canvas className="raksha-canvas" dpr={motion === 'full' ? [1, 1.35] : [0.75, 1]} camera={{ position: [0, 0, compact ? 6.3 : 7.4], fov: compact ? 39 : 43 }} gl={{ antialias: motion === 'full', alpha: true, powerPreference: 'high-performance' }}>
       <ambientLight intensity={theme === 'archive' ? 1.4 : 1.7} />
       <directionalLight position={[4, 5, 6]} intensity={theme === 'archive' ? 1.4 : 2.3} />
       <pointLight position={[-4, -2, 3]} intensity={theme === 'archive' ? 0.5 : 1.2} />
@@ -281,16 +208,7 @@ export function RakshaCore({
         <Brain label={label} theme={theme} motion={motion} security={security} intro={intro} onClick={onBrainClick} />
         <Shield theme={theme} motion={motion} security={security} />
       </group>
-      {!compact && (
-        <OrbitalPlaques
-          theme={theme}
-          motion={motion}
-          visible={showPlaques}
-          manualRotation={manualRotation}
-          dragging={dragging}
-          onSelect={onWorkflow}
-        />
-      )}
+      {!compact && <OrbitalPlaques theme={theme} motion={motion} visible={showPlaques} manualRotation={manualRotation} dragging={dragging} onSelect={onWorkflow} />}
     </Canvas>
   )
 }
