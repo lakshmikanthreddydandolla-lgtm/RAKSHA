@@ -5,6 +5,9 @@ on:
     branches: [finale-v2, finale-ux-rebuild]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -42,57 +45,16 @@ jobs:
         run: |
           set -o pipefail
           npm --prefix frontend run build 2>&1 | tee frontend-build.log
-      - name: Compiler check App.tsx
+      - name: Publish exact frontend diagnostic
         if: steps.frontend_build.outcome == 'failure'
-        continue-on-error: true
-        run: '! grep -q "src/App.tsx" frontend-build.log'
-      - name: Compiler check Workflows.tsx
-        if: steps.frontend_build.outcome == 'failure'
-        continue-on-error: true
-        run: '! grep -q "src/workflows/Workflows.tsx" frontend-build.log'
-      - name: Compiler check RakshaCore.tsx
-        if: steps.frontend_build.outcome == 'failure'
-        continue-on-error: true
-        run: '! grep -q "src/scene/RakshaCore.tsx" frontend-build.log'
-      - name: Compiler check api.ts
-        if: steps.frontend_build.outcome == 'failure'
-        continue-on-error: true
-        run: '! grep -q "src/api.ts" frontend-build.log'
-      - name: Compiler check index.css
-        if: steps.frontend_build.outcome == 'failure'
-        continue-on-error: true
-        run: '! grep -q "src/index.css" frontend-build.log'
-      - name: Compiler check App.css
-        if: steps.frontend_build.outcome == 'failure'
-        continue-on-error: true
-        run: '! grep -q "src/App.css" frontend-build.log'
-      - name: Compiler check tsconfig.app
-        if: steps.frontend_build.outcome == 'failure'
-        continue-on-error: true
-        run: '! grep -q "tsconfig.app" frontend-build.log'
-      - name: Compiler check tsconfig.node
-        if: steps.frontend_build.outcome == 'failure'
-        continue-on-error: true
-        run: '! grep -q "tsconfig.node" frontend-build.log'
-      - name: Compiler check vite config
-        if: steps.frontend_build.outcome == 'failure'
-        continue-on-error: true
-        run: '! grep -q "vite.config" frontend-build.log'
-      - name: Compiler check missing module
-        if: steps.frontend_build.outcome == 'failure'
-        continue-on-error: true
-        run: '! grep -qi "Cannot find module\|Could not resolve\|Cannot find type definition" frontend-build.log'
-      - name: Compiler check CSS parser
-        if: steps.frontend_build.outcome == 'failure'
-        continue-on-error: true
-        run: '! grep -qi "css\|Unknown word\|Unexpected token\|Parse error" frontend-build.log'
-      - name: Upload frontend diagnostics
-        if: steps.frontend_build.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-build-diagnostics
-          path: frontend-build.log
-          retention-days: 1
+        run: |
+          mkdir -p .ci
+          cp frontend-build.log .ci/frontend-build.log
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ci/frontend-build.log
+          git commit -m "ci: capture frontend build diagnostic" || true
+          git push origin HEAD:finale-ux-rebuild
       - name: Fail on frontend build error
         if: steps.frontend_build.outcome == 'failure'
         run: exit 1
