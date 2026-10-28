@@ -18,7 +18,9 @@ test('judge can activate RAKSHA, enter Demo Model, create a named user and chat'
 
   const commandPlaque = page.getByRole('button', { name: 'COMMAND CENTER' })
   await expect(commandPlaque).toBeVisible({ timeout: 5000 })
-  await commandPlaque.click()
+  // The plaque intentionally orbits continuously. Playwright's normal click
+  // waits for a stable bounding box forever, so target the exact moving button.
+  await commandPlaque.click({ force: true })
 
   await expect(page.getByText('Select intelligence source')).toBeVisible({ timeout: 5000 })
   await page.getByRole('button', { name: /DEMO MODEL/ }).click()
