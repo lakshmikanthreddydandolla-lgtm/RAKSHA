@@ -1,0 +1,28 @@
+name: RAKSHA Finale CI
+
+on:
+  push:
+    branches: [finale-v2]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install backend
+        run: pip install -r requirements.txt
+      - name: Backend compile
+        run: python -m compileall backend
+      - name: Finale smoke tests
+        run: pytest backend/tests/test_finale_smoke.py -q
+      - name: Install frontend
+        run: npm ci --prefix frontend
+      - name: Frontend production build
+        run: npm --prefix frontend run build
