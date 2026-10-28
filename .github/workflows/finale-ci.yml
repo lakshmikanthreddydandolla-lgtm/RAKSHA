@@ -15,27 +15,6 @@ jobs:
       PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
-      - name: Apply exact strict type import fix
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('frontend/src/workflows/Workflows.tsx')
-          text = path.read_text(encoding='utf-8')
-          old = "import { FormEvent, useEffect, useMemo, useState } from 'react'"
-          new = "import { useEffect, useMemo, useState } from 'react'\nimport type { FormEvent } from 'react'"
-          if old in text:
-              path.write_text(text.replace(old, new, 1), encoding='utf-8')
-          diag = Path('.ci/frontend-build.log')
-          if diag.exists():
-              diag.unlink()
-          PY
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add frontend/src/workflows/Workflows.tsx .ci/frontend-build.log || true
-            git commit -m "fix: use type-only FormEvent import"
-            git push origin HEAD:finale-ux-rebuild
-          fi
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -46,22 +25,40 @@ jobs:
         run: pip install -r requirements.txt
       - name: Backend compile
         run: python -m compileall backend
-      - name: Smoke safe invoice
-        run: python -m pytest backend/tests/test_finale_smoke.py::test_judge_mode_needs_no_api_key_and_safe_invoice_is_allowed -q
-      - name: Smoke context carryover
-        run: python -m pytest backend/tests/test_finale_smoke.py::test_demo_agent_preserves_secret_reference_across_turns -q
-      - name: Smoke scoped approval
-        run: python -m pytest backend/tests/test_finale_smoke.py::test_scoped_allow_applies_only_to_exact_session_scope -q
-      - name: Smoke red team
-        run: python -m pytest backend/tests/test_finale_smoke.py::test_multi_step_red_team_attack_is_blocked -q
-      - name: Smoke tamper evidence
-        run: python -m pytest backend/tests/test_finale_smoke.py::test_safe_tamper_demo_detects_copy_change_without_modifying_real_log -q
-      - name: Finale UX contracts
-        run: python -m pytest backend/tests/test_finale_ux_contract.py -q
-      - name: Install frontend
+      - name: Finale backend verification
+        run: python -m pytest backend/tests/test_finale_smoke.py backend/tests/test_finale_ux_contract.py -q
+      - name: Install pinned frontend stack
         run: npm install --prefix frontend
+      - name: Make visual stack offline-ready and commit generated lockfile
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('frontend/src/index.css')
+          text = path.read_text(encoding='utf-8')
+          lines = text.splitlines()
+          if lines and lines[0].startswith('@import url('):
+              path.write_text('\n'.join(lines[1:]).lstrip() + '\n', encoding='utf-8')
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package-lock.json frontend/src/index.css
+          git commit -m "chore: lock finale visual stack and remove online font dependency" || true
+          git push origin HEAD:finale-ux-rebuild
       - name: Frontend production build
         run: npm --prefix frontend run build
+      - name: Install Chromium for browser verification
+        run: cd frontend && npx playwright install --with-deps chromium
+      - name: Browser judge journey
+        run: |
+          python -m uvicorn backend.main:app --host 127.0.0.1 --port 8001 > /tmp/raksha-api.log 2>&1 &
+          npm --prefix frontend run dev -- --host 127.0.0.1 > /tmp/raksha-web.log 2>&1 &
+          for i in {1..40}; do
+            curl -fsS http://127.0.0.1:8001/api/health >/dev/null && curl -fsS http://127.0.0.1:5174 >/dev/null && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8001/api/health >/dev/null
+          curl -fsS http://127.0.0.1:5174 >/dev/null
+          npm --prefix frontend run test:e2e
       - name: Create finale ZIP
         run: |
           rm -rf .git .venv node_modules frontend/node_modules backend/data sandbox/database/*.db sandbox/mailbox/*.jsonl sandbox/logs/* || true
