@@ -11,6 +11,10 @@ from backend.finale.models import AgentPlan, ToolProposal
 from backend.finale.state import agent_context, update_agent_reference
 
 
+OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+OLLAMA_DEFAULT_MODEL = "llama3.2"
+OLLAMA_TIMEOUT_SECONDS = 30.0
+
 SECRET_WORDS = (
     "api key", "api_key", "apikey", "token", "password", "credential",
     "private key", "private_key", "secret", ".env", "environment secret",
@@ -195,9 +199,25 @@ class OllamaError(Exception):
     pass
 
 
+def ollama_health(model: str | None = None) -> str:
+    """Verify the local Ollama server and requested model before reporting CONNECTED."""
+    chosen = model or OLLAMA_DEFAULT_MODEL
+    try:
+        with httpx.Client(timeout=OLLAMA_TIMEOUT_SECONDS) as client:
+            response = client.get(f"{OLLAMA_BASE_URL}/api/tags")
+            response.raise_for_status()
+        names = [str(item.get("name", "")) for item in response.json().get("models", [])]
+        if not any(name == chosen or name.startswith(f"{chosen}:") for name in names):
+            raise OllamaError(f"{chosen} is not installed in Ollama")
+        return chosen
+    except OllamaError:
+        raise
+    except Exception as exc:
+        raise OllamaError(str(exc)) from exc
+
+
 def ollama_plan(session_id: str, message: str, model: str | None = None) -> AgentPlan:
-    """Optional local-model mode. If Ollama fails, caller can transparently fall back to Demo Agent."""
-    chosen = model or "qwen3:4b"
+    chosen = model or OLLAMA_DEFAULT_MODEL
     ctx = agent_context(session_id)
     system = (
         "You are an agent planner inside RAKSHA. Return only JSON with assistant_message, intent, rationale, proposals. "
@@ -209,9 +229,9 @@ def ollama_plan(session_id: str, message: str, model: str | None = None) -> Agen
     messages.extend(ctx.get("messages", [])[-10:])
     messages.append({"role": "user", "content": message})
     try:
-        with httpx.Client(timeout=12.0) as client:
+        with httpx.Client(timeout=OLLAMA_TIMEOUT_SECONDS) as client:
             response = client.post(
-                "http://127.0.0.1:11434/api/chat",
+                f"{OLLAMA_BASE_URL}/api/chat",
                 json={"model": chosen, "messages": messages, "stream": False, "format": "json"},
             )
             response.raise_for_status()
