@@ -37,7 +37,21 @@ jobs:
       - name: Install frontend
         run: npm install --prefix frontend
       - name: Frontend production build
-        run: npm --prefix frontend run build
+        id: frontend_build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm --prefix frontend run build 2>&1 | tee frontend-build.log
+      - name: Upload frontend diagnostics
+        if: steps.frontend_build.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build-diagnostics
+          path: frontend-build.log
+          retention-days: 1
+      - name: Fail on frontend build error
+        if: steps.frontend_build.outcome == 'failure'
+        run: exit 1
       - name: Create finale ZIP
         run: |
           rm -rf .git .venv node_modules frontend/node_modules backend/data sandbox/database/*.db sandbox/mailbox/*.jsonl sandbox/logs/* || true
