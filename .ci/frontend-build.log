@@ -1,5 +1,0 @@
-
-> raksha-finale@3.0.0 build
-> tsc -p tsconfig.app.json --noEmit && vite build
-
-src/workflows/Workflows.tsx(1,10): error TS1484: 'FormEvent' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
