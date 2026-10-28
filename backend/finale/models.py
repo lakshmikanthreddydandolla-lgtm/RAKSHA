@@ -31,10 +31,15 @@ class AgentPlan(BaseModel):
     proposals: list[ToolProposal] = Field(default_factory=list, max_length=8)
 
 
+class UserCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=48)
+
+
 class AgentConnectRequest(BaseModel):
     session_id: str = "agent-session"
     mode: AgentMode = AgentMode.DEMO
     model: str | None = None
+    display_name: str | None = Field(default=None, max_length=48)
     # Kept only for backwards compatibility with the Round-2 UI. The finale
     # demo never needs, stores, logs or validates a fake API key.
     api_key: str | None = None
