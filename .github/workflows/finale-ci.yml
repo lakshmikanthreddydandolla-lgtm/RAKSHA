@@ -2,7 +2,7 @@ name: RAKSHA Finale CI
 
 on:
   push:
-    branches: [finale-v2]
+    branches: [finale-v2, finale-ux-rebuild]
   workflow_dispatch:
 
 jobs:
@@ -22,10 +22,10 @@ jobs:
         run: pip install -r requirements.txt
       - name: Backend compile
         run: python -m compileall backend
-      - name: Finale smoke tests
-        run: python -m pytest backend/tests/test_finale_smoke.py -q
+      - name: Backend tests
+        run: python -m pytest backend/tests -q
       - name: Install frontend
-        run: npm ci --prefix frontend
+        run: npm install --prefix frontend
       - name: Frontend production build
         run: npm --prefix frontend run build
       - name: Create finale ZIP
