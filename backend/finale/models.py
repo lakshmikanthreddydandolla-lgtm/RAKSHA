@@ -35,6 +35,10 @@ class UserCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=48)
 
 
+class UserRenameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=48)
+
+
 class AgentConnectRequest(BaseModel):
     session_id: str = "agent-session"
     mode: AgentMode = AgentMode.DEMO
